@@ -7,4 +7,6 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface PK {}
+public @interface PK {
+	public boolean autoIncrement() default false;
+}

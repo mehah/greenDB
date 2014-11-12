@@ -182,5 +182,123 @@ public final class GreenDB {
 				
 		return buildEntity(st.executeQuery(), model, fields, null);
 	}
+	
+	public static boolean insert(GreenContext context, Object model) throws SQLException {
+		Class<?> modelClass;
+		final boolean isList = model instanceof List;
+		
+		@SuppressWarnings("unchecked")
+		final List<Object> list = isList ? (List<Object>) model : null;
+		if(isList) {
+			if(list.size() == 0)
+				return false;
+			
+			modelClass = list.get(0).getClass();
+		}else {
+			modelClass = model.getClass();
+		}
+		
+		if(!modelClass.isAnnotationPresent(Table.class))
+			throw new SQLException("Table name not defined in: "+modelClass.getName());
+		
+		Field[] fields = getColumns(modelClass);
+		
+		StringBuilder q = new StringBuilder("INSERT INTO ").append(modelClass.getAnnotation(Table.class).value()).append("(");
+		
+		Field fieldWithAutoIncrement = null;
+		
+		boolean first = true;
+		
+		for (int i = -1; ++i < fields.length;) {
+			Field f = fields[i];
+			PK pk = f.getAnnotation(PK.class);
+			if(pk != null && pk.autoIncrement()) {
+				fieldWithAutoIncrement = f;
+				continue;
+			}
+			
+			if(!first)
+				q.append(",");
+			
+			Column c = f.getAnnotation(Column.class);
+			q.append(c.value().isEmpty() ? f.getName() : c.value());
+			
+			first = false;
+		}
+		q.append(") VALUES");
+		
+		boolean hasAutoIncrementKey = fieldWithAutoIncrement != null;
+		
+		int length = fields.length;
+		if(hasAutoIncrementKey)
+			--length;
+		
+		if(isList){
+			first = true;
+			for (int i = -1, s = list.size(); ++i < s;) {
+				if(i > 0)
+					q.append(",");
+				createParamInsertString(q, length);
+			}
+		} else
+			createParamInsertString(q, length);
+		
+		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(q.toString(), hasAutoIncrementKey ? DatabasePreparedStatement.RETURN_GENERATED_KEYS : DatabasePreparedStatement.NO_GENERATED_KEYS);
+		
+		try {
+			if(isList) {
+				int i = 0;
+				for (Object _model : list) {
+					for (Field f : fields) {
+						if(f.equals(fieldWithAutoIncrement))
+							continue;
+						dps.setObject(++i, f.get(_model));
+					}
+				}
+			} else {
+				int i = 0;
+				for (Field f : fields) {
+					if(f.equals(fieldWithAutoIncrement))
+						continue;
+					dps.setObject(++i, f.get(model));
+				}
+			}
+		} catch (Exception e) {
+			Console.error(e);
+		}		
+		
+		boolean ok = dps.executeUpdate() > 0;
+		
+		if(ok && hasAutoIncrementKey) {
+			ResultSet rs = dps.getGeneratedKeys();
+			
+			if(isList) {
+				for (Object _model : list) {
+					rs.next();
+					GenericReflection.NoThrow.setValue(fieldWithAutoIncrement, rs.getInt(1), _model);
+				}
+			}else {
+				rs.next();
+				GenericReflection.NoThrow.setValue(fieldWithAutoIncrement, rs.getInt(1), model);
+			}	    
+		}
+		
+		return ok;
+	}
+	
+	private static void createParamInsertString(StringBuilder q, final int length) {
+		try {
+			q.append("(");
+			for (int i = -1; ++i < length;) {
+				if(i > 0)
+					q.append(",");
+				
+				q.append("?");
+			}
+			q.append(")");
+		} catch (Exception e) {
+			Console.error(e);
+		}
+	}
 
 }
