@@ -183,6 +183,108 @@ public final class GreenDB {
 		return buildEntity(st.executeQuery(), model, fields, null);
 	}
 	
+	public static boolean update(GreenContext context, Object model) throws SQLException {
+		Class<?> modelClass = model.getClass();
+		if(!modelClass.isAnnotationPresent(Table.class))
+			throw new SQLException("Table name not defined in: "+modelClass.getName());
+		
+		Field[] fieldsPK = getPKs(modelClass);
+		if(fieldsPK.length == 0)
+			throw new SQLException("To upgrade, need to have primary key in: "+modelClass.getName());
+		
+		StringBuilder sql = new StringBuilder("UPDATE ").append(modelClass.getAnnotation(Table.class).value()).append(" SET ");
+		
+		Field[] fields = getColumns(modelClass);
+		
+		int i = -1;
+		for (Field f : fields) {			
+			if(f.isAnnotationPresent(PK.class))
+				continue;
+			
+			Column c = f.getAnnotation(Column.class);
+			
+			if(++i > 0)
+				sql.append(",");
+			
+			sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
+		}
+		
+		sql.append(" WHERE ");
+		
+		i = -1;
+		for (Field f : fieldsPK) {
+			if(++i > 0)
+				sql.append(" AND ");
+			Column c = f.getAnnotation(Column.class);
+			sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
+		}
+		
+		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(sql.toString());
+		
+		i = 0;
+		for (Field f : fields) {		
+			if(f.isAnnotationPresent(PK.class))
+				continue;
+			
+			dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
+		}
+		
+		for (Field f : fieldsPK)
+			dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
+		
+		return dps.executeUpdate() > 0;
+	}
+	
+	public static boolean delete(GreenContext context, Object model) throws SQLException {
+		Class<?> modelClass;
+		final boolean isList = model instanceof List;
+		
+		@SuppressWarnings("unchecked")
+		final List<Object> list = isList ? (List<Object>) model : null;
+		if(isList) {
+			if(list.size() == 0)
+				return false;
+			
+			modelClass = list.get(0).getClass();
+		} else
+			modelClass = model.getClass();
+		
+		if(!modelClass.isAnnotationPresent(Table.class))
+			throw new SQLException("Table name not defined in: "+modelClass.getName());
+		
+		Field[] fieldsPK = getPKs(modelClass);
+		if(fieldsPK.length == 0)
+			throw new SQLException("To delete, need to have primary key in: "+modelClass.getName());
+		
+		StringBuilder sql = new StringBuilder("DELETE FROM ").append(modelClass.getAnnotation(Table.class).value()).append(" WHERE ");
+		
+		int i = -1;		
+		final int s = isList ? list.size() : 1;
+		
+		for (; ++i < s;) {
+			if(i > 0)
+				sql.append(" OR ");
+			
+			int i2 = -1;
+			for (Field f : fieldsPK) {
+				if(++i2 > 0)
+					sql.append(" AND ");
+				Column c = f.getAnnotation(Column.class);
+				sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
+			}
+		}
+		
+		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(sql.toString());
+		
+		i = 0;		
+		for (int i2 = -1; ++i2 < s;) {
+			for (Field f : fieldsPK)
+				dps.setObject(++i, GenericReflection.NoThrow.getValue(f, isList ? list.get(i2): model));
+		}
+		
+		return dps.executeUpdate() > 0;
+	}
+	
 	public static boolean insert(GreenContext context, Object model) throws SQLException {
 		Class<?> modelClass;
 		final boolean isList = model instanceof List;
@@ -234,7 +336,6 @@ public final class GreenDB {
 			--length;
 		
 		if(isList){
-			first = true;
 			for (int i = -1, s = list.size(); ++i < s;) {
 				if(i > 0)
 					q.append(",");
@@ -300,5 +401,4 @@ public final class GreenDB {
 			Console.error(e);
 		}
 	}
-
 }
