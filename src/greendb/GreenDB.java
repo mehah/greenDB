@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+import greencode.database.DatabaseConnection;
 import greencode.database.DatabasePreparedStatement;
 import greencode.database.DatabaseStatement;
 import greencode.kernel.Console;
@@ -29,15 +30,15 @@ public final class GreenDB {
 		}
 	};
 	
-	private GreenDB() {
-		
-	}
+	private DatabaseConnection connection = GreenContext.getInstance().getDatabaseConnection();
 	
-	private static Field[] getColumns(Class<?> model) {
+	public GreenDB() {}
+	
+	static Field[] getColumns(Class<?> model) {
 		return getFields(model, "column$"+model.getName(), fieldsColumns);
 	}
 	
-	private static Field[] getPKs(Class<?> model) {
+	static Field[] getPKs(Class<?> model) {
 		return getFields(model, "pk$"+model.getName(), fieldsPK);
 	}
 	
@@ -50,19 +51,19 @@ public final class GreenDB {
 		return fields;
 	}
 	
-	public static<E> List<E> findAll(Class<E> model, String[] fieldNames) throws SQLException {
-		return findAll(GreenContext.getInstance(), model, fieldNames);
+	public static<E> GreenDBList<E> findAllSynchronized(DatabaseConnection connection, Class<E> model) throws SQLException {
+		return findAllSynchronized(connection, model, null);
 	}
 	
-	public static<E> List<E> findAll(Class<E> model) throws SQLException {
-		return findAll(GreenContext.getInstance(), model, null);
+	public static<E> GreenDBList<E> findAllSynchronized(DatabaseConnection connection, Class<E> model, String[] fieldNames) throws SQLException {
+		return new GreenDBList<E>(findAll(connection, model, fieldNames), true);
 	}
 	
-	public static<E> List<E> findAll(GreenContext context, Class<E> model) throws SQLException {
-		return findAll(context, model, null);
+	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model) throws SQLException {
+		return findAll(connection, model, null);
 	}
-	
-	public static<E> List<E> findAll(GreenContext context, Class<E> model, String[] fieldNames) throws SQLException {
+		
+	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model, String[] fieldNames) throws SQLException {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
@@ -72,7 +73,7 @@ public final class GreenDB {
 		
 		q.append(" FROM ").append(model.getAnnotation(Table.class).value());
 		
-		DatabaseStatement st = context.getDatabaseConnection().createStatement();
+		DatabaseStatement st = connection.createStatement();
 		ResultSet rs = st.executeQuery(q.toString());		
 		
 		E o = buildEntity(rs, model, fields, fieldNames);
@@ -142,19 +143,10 @@ public final class GreenDB {
 		return null;
 	}
 	
-	public static<E> E findByPK(Class<E> model, String[] selectColumnNames, Object... values) throws SQLException {
-		return findByPK(GreenContext.getInstance(), model, selectColumnNames, values);
+	public static<E> E findByPK(DatabaseConnection connection, Class<E> model) throws SQLException {
+		return findByPK(connection, model, null);
 	}
-	
-	public static<E> E findByPK(Class<E> model, Object... values) throws SQLException {
-		return findByPK(GreenContext.getInstance(), model, null, values);
-	}
-	
-	public static<E> E findByPK(GreenContext context, Class<E> model, Object... values) throws SQLException {
-		return findByPK(context, model, null, values);
-	}
-	
-	public static<E> E findByPK(GreenContext context, Class<E> model, String[] selectColumnNames, Object... values) throws SQLException {
+	public static<E> E findByPK(DatabaseConnection connection, Class<E> model, String[] selectColumnNames, Object... values) throws SQLException {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
@@ -175,7 +167,7 @@ public final class GreenDB {
 		}
 		
 		
-		DatabasePreparedStatement st = context.getDatabaseConnection().prepareStatement(q.toString());
+		DatabasePreparedStatement st = connection.prepareStatement(q.toString());
 		
 		for (int i = -1; ++i < values.length;)
 			st.setObject(i+1, values[i]);
@@ -183,7 +175,7 @@ public final class GreenDB {
 		return buildEntity(st.executeQuery(), model, fields, null);
 	}
 	
-	public static boolean update(GreenContext context, Object model) throws SQLException {
+	public static boolean update(DatabaseConnection connection, Object model) throws SQLException {
 		Class<?> modelClass = model.getClass();
 		if(!modelClass.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+modelClass.getName());
@@ -219,7 +211,7 @@ public final class GreenDB {
 			sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
 		}
 		
-		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(sql.toString());
+		DatabasePreparedStatement dps = connection.prepareStatement(sql.toString());
 		
 		i = 0;
 		for (Field f : fields) {		
@@ -235,7 +227,7 @@ public final class GreenDB {
 		return dps.executeUpdate() > 0;
 	}
 	
-	public static boolean delete(GreenContext context, Object model) throws SQLException {
+	public static boolean delete(DatabaseConnection connection, Object model) throws SQLException {
 		Class<?> modelClass;
 		final boolean isList = model instanceof List;
 		
@@ -274,7 +266,7 @@ public final class GreenDB {
 			}
 		}
 		
-		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(sql.toString());
+		DatabasePreparedStatement dps = connection.prepareStatement(sql.toString());
 		
 		i = 0;		
 		for (int i2 = -1; ++i2 < s;) {
@@ -285,7 +277,7 @@ public final class GreenDB {
 		return dps.executeUpdate() > 0;
 	}
 	
-	public static boolean insert(GreenContext context, Object model) throws SQLException {
+	public static boolean insert(DatabaseConnection connection, Object model) throws SQLException {
 		Class<?> modelClass;
 		final boolean isList = model instanceof List;
 		
@@ -344,7 +336,7 @@ public final class GreenDB {
 		} else
 			createParamInsertString(q, length);
 		
-		DatabasePreparedStatement dps = context.getDatabaseConnection().prepareStatement(q.toString(), hasAutoIncrementKey ? DatabasePreparedStatement.RETURN_GENERATED_KEYS : DatabasePreparedStatement.NO_GENERATED_KEYS);
+		DatabasePreparedStatement dps = connection.prepareStatement(q.toString(), hasAutoIncrementKey ? DatabasePreparedStatement.RETURN_GENERATED_KEYS : DatabasePreparedStatement.NO_GENERATED_KEYS);
 		
 		try {
 			if(isList) {
@@ -400,5 +392,9 @@ public final class GreenDB {
 		} catch (Exception e) {
 			Console.error(e);
 		}
+	}
+	
+	public static<E> GreenDBList<E> synchronizedList(List<E> list) {
+		return GreenDBList.Synchronized(list);
 	}
 }
