@@ -1,21 +1,20 @@
 package greendb;
 
-import java.lang.reflect.Field;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
-
 import greencode.database.DatabaseConnection;
 import greencode.database.DatabasePreparedStatement;
 import greencode.database.DatabaseStatement;
 import greencode.kernel.Console;
-import greencode.kernel.GreenContext;
 import greencode.util.GenericReflection;
 import greencode.util.GenericReflection.Condition;
 import greendb.annotation.Column;
 import greendb.annotation.PK;
 import greendb.annotation.Table;
+
+import java.lang.reflect.Field;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class GreenDB {
 	private final static Condition<Field> fieldsColumns = new GenericReflection.Condition<Field>() {
@@ -29,9 +28,7 @@ public final class GreenDB {
 			return f.isAnnotationPresent(Column.class) && f.isAnnotationPresent(PK.class);
 		}
 	};
-	
-	private DatabaseConnection connection = GreenContext.getInstance().getDatabaseConnection();
-	
+		
 	public GreenDB() {}
 	
 	static Field[] getColumns(Class<?> model) {
@@ -189,11 +186,14 @@ public final class GreenDB {
 		Field[] fields = getColumns(modelClass);
 		
 		int i = -1;
-		for (Field f : fields) {			
+		for (Field f : fields) {
 			if(f.isAnnotationPresent(PK.class))
 				continue;
 			
 			Column c = f.getAnnotation(Column.class);
+			
+			if(!c.updatable())
+				continue;
 			
 			if(++i > 0)
 				sql.append(",");
@@ -214,8 +214,12 @@ public final class GreenDB {
 		DatabasePreparedStatement dps = connection.prepareStatement(sql.toString());
 		
 		i = 0;
-		for (Field f : fields) {		
+		for (Field f : fields) {
 			if(f.isAnnotationPresent(PK.class))
+				continue;
+			
+			Column c = f.getAnnotation(Column.class);			
+			if(!c.updatable())
 				continue;
 			
 			dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
