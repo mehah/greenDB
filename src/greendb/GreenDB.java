@@ -11,8 +11,10 @@ import greendb.annotation.PK;
 import greendb.annotation.Table;
 
 import java.lang.reflect.Field;
+import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,19 +33,19 @@ public final class GreenDB {
 		
 	public GreenDB() {}
 	
-	static Field[] getColumns(Class<?> model) {
-		return getFields(model, "column$"+model.getName(), fieldsColumns);
+	static Field[] getColumns(Class<?> model, boolean considerParents) {
+		return getFields(model, "column$"+model.getName(), fieldsColumns, considerParents);
 	}
 	
 	static Field[] getPKs(Class<?> model) {
-		return getFields(model, "pk$"+model.getName(), fieldsPK);
+		return getFields(model, "pk$"+model.getName(), fieldsPK, true);
 	}
 	
-	private static Field[] getFields(Class<?> model, String ref, Condition<Field> condition) {
+	private static Field[] getFields(Class<?> model, String ref, Condition<Field> condition, boolean considerParents) {
 		Field[] fields = GenericReflection.getDeclaredFieldsByConditionId(model, ref);
 		
 		if(fields == null)
-			fields = GenericReflection.getDeclaredFieldsByCondition(model, ref, condition, true);
+			fields = GenericReflection.getDeclaredFieldsByCondition(model, ref, condition, considerParents);
 		
 		return fields;
 	}
@@ -64,7 +66,7 @@ public final class GreenDB {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
-		Field[] fields = getColumns(model);
+		Field[] fields = getColumns(model, true);
 		
 		StringBuilder q = new StringBuilder("SELECT ").append(fieldToColumnNames(fields, fieldNames));
 		
@@ -111,10 +113,15 @@ public final class GreenDB {
 	}
 	
 	private static<E> E buildEntity(ResultSet rs, Class<E> model, Field[] fields, String[] fieldNames) {
+		return buildEntity(rs, model, fields, fieldNames, null);
+	}
+	
+	private static<E> E buildEntity(ResultSet rs, Class<E> model, Field[] fields, String[] fieldNames, Boolean hasResult) {
 		try {
-			E instance = model.newInstance();
-			boolean hasResult = rs.next();
+			if(hasResult == null)
+				hasResult = rs.next();
 			if(hasResult) {
+				E instance = model.newInstance();
 				if(fieldNames == null) {
 					for (Field f : fields) {
 						Column c = f.getAnnotation(Column.class);
@@ -147,7 +154,7 @@ public final class GreenDB {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
-		Field[] fields = getColumns(model);
+		Field[] fields = getColumns(model, true);
 		
 		StringBuilder q = new StringBuilder("SELECT ").append(fieldToColumnNames(fields, selectColumnNames)).append(" FROM ").append(model.getAnnotation(Table.class).value()).append(" WHERE ");
 		
@@ -172,6 +179,50 @@ public final class GreenDB {
 		return buildEntity(st.executeQuery(), model, fields, null);
 	}
 	
+	public static<E> List<E> findByColumns(DatabaseConnection connection, Class<E> model, String[] selectColumnNames, String[] whereColumnNames, Object... values) throws SQLException {
+		if(!model.isAnnotationPresent(Table.class))
+			throw new SQLException("Table name not defined in: "+model.getName());
+		
+		Field[] fields = getColumns(model, true);
+		
+		StringBuilder q = new StringBuilder("SELECT ").append(fieldToColumnNames(fields, selectColumnNames)).append(" FROM ").append(model.getAnnotation(Table.class).value()).append(" WHERE ");
+		
+		Field[] fieldsPK = getColumns(model, true);
+		
+		int i = -1;
+		for (Field f: fieldsPK) {			
+			Column c = f.getAnnotation(Column.class);
+			String name = c.value().isEmpty() ? f.getName() : c.value();
+			for(String columnName: whereColumnNames) {
+				if(columnName.equals(name)) {
+					if(++i > 0)
+						q.append(" and ");
+					
+					q.append(c.value().isEmpty() ? f.getName() : c.value()).append(" = ?");
+				}
+			}
+		}
+		
+		
+		DatabasePreparedStatement st = connection.prepareStatement(q.toString());
+		
+		for (i = -1; ++i < values.length;)
+			st.setObject(i+1, values[i]);
+		
+		ResultSet rs = st.executeQuery();
+		E o = buildEntity(rs, model, fields, selectColumnNames);
+		if(o == null)		
+			return null;
+		else {
+			List<E> list = new ArrayList<E>();
+			list.add(o);
+			while((o = buildEntity(rs, model, fields, selectColumnNames)) != null)
+				list.add(o);
+			
+			return list;
+		}
+	}
+	
 	public static boolean update(DatabaseConnection connection, Object model) throws SQLException {
 		Class<?> modelClass = model.getClass();
 		if(!modelClass.isAnnotationPresent(Table.class))
@@ -183,7 +234,7 @@ public final class GreenDB {
 		
 		StringBuilder sql = new StringBuilder("UPDATE ").append(modelClass.getAnnotation(Table.class).value()).append(" SET ");
 		
-		Field[] fields = getColumns(modelClass);
+		Field[] fields = getColumns(modelClass, true);
 		
 		int i = -1;
 		for (Field f : fields) {
@@ -222,7 +273,10 @@ public final class GreenDB {
 			if(!c.updatable())
 				continue;
 			
-			dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
+			if(f.getType().equals(Date.class))
+				dps.setTimestamp(++i, new Timestamp(((Date) GenericReflection.NoThrow.getValue(f, model)).getTime()));
+			else
+				dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
 		}
 		
 		for (Field f : fieldsPK)
@@ -282,24 +336,31 @@ public final class GreenDB {
 	}
 	
 	public static boolean insert(DatabaseConnection connection, Object model) throws SQLException {
-		Class<?> modelClass;
+		return insert(connection, model, null);
+	}
+	
+	public static boolean insert(DatabaseConnection connection, Object model, /* Temporario */Class<?> ref) throws SQLException {
+		Class<?> modelClass = ref;
 		final boolean isList = model instanceof List;
 		
 		@SuppressWarnings("unchecked")
 		final List<Object> list = isList ? (List<Object>) model : null;
-		if(isList) {
-			if(list.size() == 0)
-				return false;
-			
-			modelClass = list.get(0).getClass();
-		}else {
-			modelClass = model.getClass();
+		
+		if(ref == null) {
+			if(isList) {
+				if(list.size() == 0)
+					return false;
+				
+				modelClass = list.get(0).getClass();
+			}else {
+				modelClass = model.getClass();
+			}
 		}
 		
 		if(!modelClass.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+modelClass.getName());
 		
-		Field[] fields = getColumns(modelClass);
+		Field[] fields = getColumns(modelClass, false);
 		
 		StringBuilder q = new StringBuilder("INSERT INTO ").append(modelClass.getAnnotation(Table.class).value()).append("(");
 		
@@ -345,20 +406,11 @@ public final class GreenDB {
 		try {
 			if(isList) {
 				int i = 0;
-				for (Object _model : list) {
-					for (Field f : fields) {
-						if(f.equals(fieldWithAutoIncrement))
-							continue;
-						dps.setObject(++i, f.get(_model));
-					}
+				for (Object _model : list) {					
+					i = setDBObject(fields, fieldWithAutoIncrement, dps, _model, i);
 				}
 			} else {
-				int i = 0;
-				for (Field f : fields) {
-					if(f.equals(fieldWithAutoIncrement))
-						continue;
-					dps.setObject(++i, f.get(model));
-				}
+				setDBObject(fields, fieldWithAutoIncrement, dps, model, 0);
 			}
 		} catch (Exception e) {
 			Console.error(e);
@@ -382,6 +434,127 @@ public final class GreenDB {
 		
 		return ok;
 	}
+	
+	private static int setDBObject(Field[] fields, Field fieldWithAutoIncrement, DatabasePreparedStatement dps, Object model, int i) throws IllegalArgumentException, SQLException, IllegalAccessException {
+		for (Field f : fields) {
+			if(f.equals(fieldWithAutoIncrement))
+				continue;
+			
+			if(f.getType().equals(Date.class))
+				dps.setTimestamp(++i, new Timestamp(((Date) f.get(model)).getTime()));
+			else
+				dps.setObject(++i, f.get(model));
+		}
+		return i;
+	}
+	
+	/*@Deprecated
+	public static boolean insert2(DatabaseConnection connection, Object model) throws SQLException {
+		Class<?> modelClass;
+		final boolean isList = model instanceof List;
+		
+		@SuppressWarnings("unchecked")
+		final List<Object> list = isList ? (List<Object>) model : null;
+		if(isList) {
+			if(list.size() == 0)
+				return false;
+			
+			modelClass = list.get(0).getClass();
+		}else {
+			modelClass = model.getClass();
+		}
+		
+		if(!modelClass.isAnnotationPresent(Table.class))
+			throw new SQLException("Table name not defined in: "+modelClass.getName());
+		
+		final Class<?>[] parents = ClassUtils.getParents(modelClass);		
+		for(int p = parents.length; --p >= 0;) {
+			Class<?> parent = parents[p];
+			
+			Field[] fields = getColumns(parent, false);
+			
+			StringBuilder q = new StringBuilder("INSERT INTO ").append(modelClass.getAnnotation(Table.class).value()).append("(");
+			
+			Field fieldWithAutoIncrement = null;
+			
+			boolean first = true;
+			
+			for (int i = -1; ++i < fields.length;) {
+				Field f = fields[i];
+				PK pk = f.getAnnotation(PK.class);
+				if(pk != null && pk.autoIncrement()) {
+					fieldWithAutoIncrement = f;
+					continue;
+				}
+				
+				if(!first)
+					q.append(",");
+				
+				Column c = f.getAnnotation(Column.class);
+				q.append(c.value().isEmpty() ? f.getName() : c.value());
+				
+				first = false;
+			}
+			q.append(") VALUES");
+			
+			boolean hasAutoIncrementKey = fieldWithAutoIncrement != null;
+			
+			int length = fields.length;
+			if(hasAutoIncrementKey)
+				--length;
+			
+			if(isList){
+				for (int i = -1, s = list.size(); ++i < s;) {
+					if(i > 0)
+						q.append(",");
+					createParamInsertString(q, length);
+				}
+			} else
+				createParamInsertString(q, length);
+			
+			DatabasePreparedStatement dps = connection.prepareStatement(q.toString(), hasAutoIncrementKey ? DatabasePreparedStatement.RETURN_GENERATED_KEYS : DatabasePreparedStatement.NO_GENERATED_KEYS);
+			
+			try {
+				if(isList) {
+					int i = 0;
+					for (Object _model : list) {
+						for (Field f : fields) {
+							if(f.equals(fieldWithAutoIncrement))
+								continue;
+							dps.setObject(++i, f.get(_model));
+						}
+					}
+				} else {
+					int i = 0;
+					for (Field f : fields) {
+						if(f.equals(fieldWithAutoIncrement))
+							continue;
+						dps.setObject(++i, f.get(model));
+					}
+				}
+			} catch (Exception e) {
+				Console.error(e);
+			}		
+			
+			boolean ok = dps.executeUpdate() > 0;
+			
+			if(ok && hasAutoIncrementKey) {
+				ResultSet rs = dps.getGeneratedKeys();
+				
+				if(isList) {
+					for (Object _model : list) {
+						rs.next();
+						GenericReflection.NoThrow.setValue(fieldWithAutoIncrement, rs.getInt(1), _model);
+					}
+				}else {
+					rs.next();
+					GenericReflection.NoThrow.setValue(fieldWithAutoIncrement, rs.getInt(1), model);
+				}	    
+			}
+		}
+		
+		return ok;
+	}*/
 	
 	private static void createParamInsertString(StringBuilder q, final int length) {
 		try {
