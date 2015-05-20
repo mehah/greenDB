@@ -41,6 +41,10 @@ public final class GreenDB {
 		return getFields(model, "pk$"+model.getName(), fieldsPK, true);
 	}
 	
+	static Field[] getPKs(Class<?> model, boolean considerParents) {
+		return getFields(model, "pk$"+model.getName(), fieldsPK, considerParents);
+	}
+	
 	private static Field[] getFields(Class<?> model, String ref, Condition<Field> condition, boolean considerParents) {
 		Field[] fields = GenericReflection.getDeclaredFieldsByConditionId(model, ref);
 		
@@ -224,17 +228,21 @@ public final class GreenDB {
 	}
 	
 	public static boolean update(DatabaseConnection connection, Object model) throws SQLException {
-		Class<?> modelClass = model.getClass();
+		return update(connection, model, model.getClass());
+	}
+	
+	public static boolean update(DatabaseConnection connection, Object model, /* Temporario */Class<?> ref) throws SQLException {
+		Class<?> modelClass = ref;
 		if(!modelClass.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+modelClass.getName());
 		
-		Field[] fieldsPK = getPKs(modelClass);
+		Field[] fieldsPK = getPKs(modelClass, false);
 		if(fieldsPK.length == 0)
 			throw new SQLException("To upgrade, need to have primary key in: "+modelClass.getName());
 		
 		StringBuilder sql = new StringBuilder("UPDATE ").append(modelClass.getAnnotation(Table.class).value()).append(" SET ");
 		
-		Field[] fields = getColumns(modelClass, true);
+		Field[] fields = getColumns(modelClass, false);
 		
 		int i = -1;
 		for (Field f : fields) {
