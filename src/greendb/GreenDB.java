@@ -1,15 +1,5 @@
 package greendb;
 
-import greencode.database.DatabaseConnection;
-import greencode.database.DatabasePreparedStatement;
-import greencode.database.DatabaseStatement;
-import greencode.kernel.Console;
-import greencode.util.GenericReflection;
-import greencode.util.GenericReflection.Condition;
-import greendb.annotation.Column;
-import greendb.annotation.PK;
-import greendb.annotation.Table;
-
 import java.lang.reflect.Field;
 import java.sql.Date;
 import java.sql.ResultSet;
@@ -17,6 +7,16 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
+
+import greencode.database.DatabaseConnection;
+import greencode.database.DatabasePreparedStatement;
+import greencode.database.DatabaseStatement;
+import greencode.exception.GreencodeError;
+import greencode.util.GenericReflection;
+import greencode.util.GenericReflection.Condition;
+import greendb.annotation.Column;
+import greendb.annotation.PK;
+import greendb.annotation.Table;
 
 public final class GreenDB {
 	private final static Condition<Field> fieldsColumns = new GenericReflection.Condition<Field>() {
@@ -59,14 +59,18 @@ public final class GreenDB {
 	}
 	
 	public static<E> GreenDBList<E> findAllSynchronized(DatabaseConnection connection, Class<E> model, String[] fieldNames) throws SQLException {
-		return new GreenDBList<E>(findAll(connection, model, fieldNames), true);
+		return new GreenDBList<E>(findAll(connection, model, fieldNames, null), true);
 	}
 	
 	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model) throws SQLException {
-		return findAll(connection, model, null);
+		return findAll(connection, model, null, null);
+	}
+	
+	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model, String[] orderByColumnNames) throws SQLException {
+		return findAll(connection, model, null, orderByColumnNames);
 	}
 		
-	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model, String[] fieldNames) throws SQLException {
+	public static<E> List<E> findAll(DatabaseConnection connection, Class<E> model, String[] fieldNames, String[] orderByColumnNames) throws SQLException {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
@@ -75,6 +79,13 @@ public final class GreenDB {
 		StringBuilder q = new StringBuilder("SELECT ").append(fieldToColumnNames(fields, fieldNames));
 		
 		q.append(" FROM ").append(model.getAnnotation(Table.class).value());
+		
+		if(orderByColumnNames != null) {
+			q.append(" ORDER BY ").append(orderByColumnNames[0]);
+			for(int i = 0; ++i < orderByColumnNames.length;) {
+				q.append(",").append(orderByColumnNames[i]);
+			}
+		}
 		
 		DatabaseStatement st = connection.createStatement();
 		ResultSet rs = st.executeQuery(q.toString());		
@@ -145,7 +156,7 @@ public final class GreenDB {
 				return instance;
 			}		
 		} catch (Exception e) {
-			Console.error(e);
+			throw new GreencodeError(e);
 		}
 		
 		return null;
@@ -421,7 +432,7 @@ public final class GreenDB {
 				setDBObject(fields, fieldWithAutoIncrement, dps, model, 0);
 			}
 		} catch (Exception e) {
-			Console.error(e);
+			throw new GreencodeError(e);
 		}		
 		
 		boolean ok = dps.executeUpdate() > 0;
@@ -575,7 +586,7 @@ public final class GreenDB {
 			}
 			q.append(")");
 		} catch (Exception e) {
-			Console.error(e);
+			throw new GreencodeError(e);
 		}
 	}
 	
