@@ -321,9 +321,9 @@ public final class GreenDB {
 		if(!modelClass.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+modelClass.getName());
 		
-		Field[] fieldsPK = getPKs(modelClass);
-		if(fieldsPK.length == 0)
-			throw new SQLException("To delete, need to have primary key in: "+modelClass.getName());
+		Field[] fieldsCondition = getPKs(modelClass);
+		if(fieldsCondition.length == 0)
+			fieldsCondition = getColumns(modelClass, true);
 		
 		StringBuilder sql = new StringBuilder("DELETE FROM ").append(modelClass.getAnnotation(Table.class).value()).append(" WHERE ");
 		
@@ -335,7 +335,7 @@ public final class GreenDB {
 				sql.append(" OR ");
 			
 			int i2 = -1;
-			for (Field f : fieldsPK) {
+			for (Field f : fieldsCondition) {
 				if(++i2 > 0)
 					sql.append(" AND ");
 				Column c = f.getAnnotation(Column.class);
@@ -347,7 +347,7 @@ public final class GreenDB {
 		
 		i = 0;		
 		for (int i2 = -1; ++i2 < s;) {
-			for (Field f : fieldsPK)
+			for (Field f : fieldsCondition)
 				dps.setObject(++i, GenericReflection.NoThrow.getValue(f, isList ? list.get(i2): model));
 		}
 		
