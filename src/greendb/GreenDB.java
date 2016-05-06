@@ -305,6 +305,10 @@ public final class GreenDB {
 	}
 	
 	public static boolean delete(DatabaseConnection connection, Object model) throws SQLException {
+		return delete(connection, model, null);
+	}
+	
+	public static boolean delete(DatabaseConnection connection, Object model, String[] ignoreFields) throws SQLException {
 		Class<?> modelClass;
 		final boolean isList = model instanceof List;
 		
@@ -330,26 +334,44 @@ public final class GreenDB {
 		int i = -1;		
 		final int s = isList ? list.size() : 1;
 		
+		List<Object> values = new ArrayList<Object>();
+		
 		for (; ++i < s;) {
 			if(i > 0)
 				sql.append(" OR ");
+		
 			
 			int i2 = -1;
+
+			loopFieldsCondition:
 			for (Field f : fieldsCondition) {
+				Column c = f.getAnnotation(Column.class);
+				String fieldName = c.value().isEmpty() ? f.getName() : c.value();
+				
+				if(ignoreFields != null) {
+					for (String _fieldName : ignoreFields) {
+						if(fieldName.equals(_fieldName)) {
+							continue loopFieldsCondition;
+						}
+					}
+				}
+				
 				if(++i2 > 0)
 					sql.append(" AND ");
-				Column c = f.getAnnotation(Column.class);
-				sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
+				
+				Object value = GenericReflection.NoThrow.getValue(f, isList ? list.get(i) : model);
+				values.add(value);
+				
+				
+				sql.append(fieldName).append(value == null ? " is " : "=").append("?");
 			}
 		}
 		
 		DatabasePreparedStatement dps = connection.prepareStatement(sql.toString());
 		
 		i = 0;		
-		for (int i2 = -1; ++i2 < s;) {
-			for (Field f : fieldsCondition)
-				dps.setObject(++i, GenericReflection.NoThrow.getValue(f, isList ? list.get(i2): model));
-		}
+		for (Object v : values)
+			dps.setObject(++i, v);
 		
 		return dps.executeUpdate() > 0;
 	}
