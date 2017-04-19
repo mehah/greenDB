@@ -292,10 +292,12 @@ public final class GreenDB {
 			if(!c.updatable())
 				continue;
 			
-			if(f.getType().equals(Date.class))
+			Object value = GenericReflection.NoThrow.getValue(f, model);
+			if(value != null && f.getType().equals(Date.class)) {
 				dps.setTimestamp(++i, new Timestamp(((Date) GenericReflection.NoThrow.getValue(f, model)).getTime()));
-			else
+			} else {
 				dps.setObject(++i, GenericReflection.NoThrow.getValue(f, model));
+			}
 		}
 		
 		for (Field f : fieldsPK)
