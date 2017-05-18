@@ -127,15 +127,17 @@ public final class GreenDB {
 		return q;
 	}
 	
-	private static<E> E buildEntity(ResultSet rs, Class<E> model, Field[] fields, String[] fieldNames) {
-		return buildEntity(rs, model, fields, fieldNames, null);
+	public static<E> E buildObject(ResultSet rs, Class<E> model) {
+		return buildEntity(rs, model, getColumns(model, true), null);
 	}
 	
-	private static<E> E buildEntity(ResultSet rs, Class<E> model, Field[] fields, String[] fieldNames, Boolean hasResult) {
+	public static<E> E buildObject(ResultSet rs, Class<E> model, String[] fieldNames) {
+		return buildEntity(rs, model, getColumns(model, true), fieldNames);
+	}
+		
+	private static<E> E buildEntity(ResultSet rs, Class<E> model, Field[] fields, String[] fieldNames) {
 		try {
-			if(hasResult == null)
-				hasResult = rs.next();
-			if(hasResult) {
+			if(rs.next()) {
 				E instance = model.newInstance();
 				if(fieldNames == null) {
 					for (Field f : fields) {
