@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import greencode.database.DatabaseConnection;
@@ -244,7 +245,7 @@ public final class GreenDB {
 		return update(connection, model, model.getClass());
 	}
 	
-	public static boolean update(DatabaseConnection connection, Object model, /* Temporario */Class<?> ref) throws SQLException {
+	public static boolean update(DatabaseConnection connection, Object model, /* Temporario */Class<?> ref, String... fieldNames) throws SQLException {
 		Class<?> modelClass = ref;
 		if(!modelClass.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+modelClass.getName());
@@ -257,6 +258,8 @@ public final class GreenDB {
 		
 		Field[] fields = getColumns(modelClass, false);
 		
+		List<String> listFieldNames = Arrays.asList(fieldNames);
+		
 		int i = -1;
 		for (Field f : fields) {
 			if(f.isAnnotationPresent(PK.class))
@@ -267,10 +270,16 @@ public final class GreenDB {
 			if(!c.updatable())
 				continue;
 			
+			String name = c.value().isEmpty() ? f.getName() : c.value();
+			
+			if(fieldNames.length > 0 && listFieldNames.indexOf(name) == -1) {
+				continue;
+			}
+			
 			if(++i > 0)
 				sql.append(",");
 			
-			sql.append(c.value().isEmpty() ? f.getName() : c.value()).append("=").append("?");
+			sql.append(name).append("=").append("?");
 		}
 		
 		sql.append(" WHERE ");
@@ -293,6 +302,12 @@ public final class GreenDB {
 			Column c = f.getAnnotation(Column.class);			
 			if(!c.updatable())
 				continue;
+			
+			String name = c.value().isEmpty() ? f.getName() : c.value();
+			
+			if(fieldNames.length > 0 && listFieldNames.indexOf(name) == -1) {
+				continue;
+			}
 			
 			Object value = GenericReflection.NoThrow.getValue(f, model);
 			if(value != null && f.getType().equals(Date.class)) {
