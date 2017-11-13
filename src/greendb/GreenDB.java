@@ -197,7 +197,7 @@ public final class GreenDB {
 		return buildEntity(st.executeQuery(), model, fields, null);
 	}
 	
-	public static<E> List<E> findByColumns(DatabaseConnection connection, Class<E> model, String[] selectColumnNames, String[] whereColumnNames, Object... values) throws SQLException {
+	public static<E> List<E> findByColumns(DatabaseConnection connection, Class<E> model, String[] selectColumnNames, String[] whereColumnNames, String[] groupColumnNames, Object... values) throws SQLException {
 		if(!model.isAnnotationPresent(Table.class))
 			throw new SQLException("Table name not defined in: "+model.getName());
 		
@@ -221,6 +221,14 @@ public final class GreenDB {
 			}
 		}
 		
+		if(groupColumnNames != null) {
+			q.append(" GROUP BY ");
+			for(i = -1; ++i < groupColumnNames.length;) {
+				if(i > 0)
+					q.append(',');
+				q.append(groupColumnNames[i]);
+			}
+		}		
 		
 		DatabasePreparedStatement st = connection.prepareStatement(q.toString());
 		
