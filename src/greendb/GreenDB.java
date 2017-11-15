@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import greencode.database.DatabaseConnection;
-import greencode.database.DatabasePreparedStatement;
-import greencode.database.DatabaseStatement;
-import greencode.exception.GreencodeError;
-import greencode.util.GenericReflection;
-import greencode.util.GenericReflection.Condition;
+import com.jrender.database.DatabaseConnection;
+import com.jrender.database.DatabasePreparedStatement;
+import com.jrender.database.DatabaseStatement;
+import com.jrender.exception.JRenderError;
+import com.jrender.util.GenericReflection;
+import com.jrender.util.GenericReflection.Condition;
 import greendb.annotation.Column;
 import greendb.annotation.PK;
 import greendb.annotation.Table;
@@ -159,7 +159,7 @@ public final class GreenDB {
 				return instance;
 			}		
 		} catch (Exception e) {
-			throw new GreencodeError(e);
+			throw new JRenderError(e);
 		}
 		
 		return null;
@@ -483,7 +483,7 @@ public final class GreenDB {
 				setDBObject(fields, fieldWithAutoIncrement, dps, model, 0);
 			}
 		} catch (Exception e) {
-			throw new GreencodeError(e);
+			throw new JRenderError(e);
 		}		
 		
 		boolean ok = dps.executeUpdate() > 0;
@@ -637,7 +637,7 @@ public final class GreenDB {
 			}
 			q.append(")");
 		} catch (Exception e) {
-			throw new GreencodeError(e);
+			throw new JRenderError(e);
 		}
 	}
 	

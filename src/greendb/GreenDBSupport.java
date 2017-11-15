@@ -3,12 +3,12 @@ package greendb;
 import java.sql.SQLException;
 import java.util.List;
 
-import greencode.database.DatabaseConnection;
-import greencode.kernel.GreenContext;
+import com.jrender.database.DatabaseConnection;
+import com.jrender.kernel.JRenderContext;
 
 public class GreenDBSupport {
 
-	private DatabaseConnection connection = GreenContext.getInstance().getDatabaseConnection();
+	private DatabaseConnection connection = JRenderContext.getInstance().getDatabaseConnection();
 	private final boolean Synchronize;
 	
 	public GreenDBSupport() {

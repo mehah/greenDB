@@ -1,7 +1,7 @@
 package greendb;
 
-import greencode.database.DatabaseConnection;
-import greencode.kernel.GreenContext;
+import com.jrender.database.DatabaseConnection;
+import com.jrender.kernel.JRenderContext;
 import greendb.exception.GreenDBException;
 
 import java.sql.SQLException;
@@ -19,7 +19,7 @@ public final class GreenDBList<E> implements List<E> {
 	private DatabaseConnection getConnection() {
 		try {
 			if(connection == null || connection.isClosed())
-				this.connection = GreenContext.getInstance().getDatabaseConnection();
+				this.connection = JRenderContext.getInstance().getDatabaseConnection();
 		} catch (SQLException e) {
 			throw new GreenDBException(e);
 		}
