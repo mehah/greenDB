@@ -216,7 +216,8 @@ public final class GreenDB {
 					if(++i > 0)
 						q.append(" and ");
 					
-					q.append(c.value().isEmpty() ? f.getName() : c.value()).append(" = ?");
+					q.append(c.value().isEmpty() ? f.getName() : c.value())					
+						.append(values[i] == null ? " is null" : " = ?");
 				}
 			}
 		}
@@ -232,8 +233,12 @@ public final class GreenDB {
 		
 		DatabasePreparedStatement st = connection.prepareStatement(q.toString());
 		
-		for (i = -1; ++i < values.length;)
-			st.setObject(i+1, values[i]);
+		for (i = -1; ++i < values.length;) {
+			Object v = values[i];
+			if(v != null) {
+				st.setObject(i+1, v);
+			}
+		}
 		
 		ResultSet rs = st.executeQuery();
 		E o = buildEntity(rs, model, fields, selectColumnNames);
